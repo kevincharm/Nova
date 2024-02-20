@@ -59,7 +59,8 @@ impl<G: Group> MinRootIteration<G> {
         assert_eq!(fifth, x_i + y_i);
       }
 
-      let y_i_plus_1 = x_i;
+      let i_ = <G::Scalar as PrimeField>::from_u128(_i as u128);
+      let y_i_plus_1 = x_i + i_;
 
       res.push(Self {
         x_i,
@@ -105,16 +106,19 @@ impl<G: Group> StepCircuit<G::Scalar> for MinRootCircuit<G> {
     let mut y_i = y_0;
     for i in 0..self.seq.len() {
       // non deterministic advice
+      let i_ = AllocatedNum::alloc(cs.namespace(|| format!("i_iter_{i}")), || {
+        Ok(<G::Scalar as PrimeField>::from_u128(i as u128))
+      })?;
       let x_i_plus_1 =
         AllocatedNum::alloc(cs.namespace(|| format!("x_i_plus_1_iter_{i}")), || {
           Ok(self.seq[i].x_i_plus_1)
         })?;
+      let y_i_plus_1 = AllocatedNum::alloc(cs.namespace(|| format!("y_i_plus_1_iter{i}")), || {
+        Ok(self.seq[i].y_i_plus_1)
+      })?;
 
-      // check the following conditions hold:
+      // check that conditions (i) and (ii) hold:
       // (i) x_i_plus_1 = (x_i + y_i)^{1/5}, which can be more easily checked with x_i_plus_1^5 = x_i + y_i
-      // (ii) y_i_plus_1 = x_i
-      // (1) constraints for condition (i) are below
-      // (2) constraints for condition (ii) is avoided because we just used x_i wherever y_i_plus_1 is used
       let x_i_plus_1_sq = x_i_plus_1.square(cs.namespace(|| format!("x_i_plus_1_sq_iter_{i}")))?;
       let x_i_plus_1_quad =
         x_i_plus_1_sq.square(cs.namespace(|| format!("x_i_plus_1_quad_{i}")))?;
@@ -124,13 +128,20 @@ impl<G: Group> StepCircuit<G::Scalar> for MinRootCircuit<G> {
         |lc| lc + x_i_plus_1.get_variable(),
         |lc| lc + x_i.get_variable() + y_i.get_variable(),
       );
+      // (ii) y_i_plus_1 = x_i + i
+      cs.enforce(
+        || format!("1 * y_i_plus_1 = x_i + i"),
+        |lc| lc + CS::one(),
+        |lc| lc + y_i_plus_1.get_variable(),
+        |lc| lc + x_i.get_variable() + i_.get_variable(),
+      );
 
       if i == self.seq.len() - 1 {
         z_out = Ok(vec![x_i_plus_1.clone(), x_i.clone()]);
       }
 
       // update x_i and y_i for the next iteration
-      y_i = x_i;
+      y_i = y_i_plus_1;
       x_i = x_i_plus_1;
     }
 
