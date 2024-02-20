@@ -2,10 +2,10 @@
 //! iterations of the `MinRoot` function, thereby realizing a Nova-based verifiable delay function (VDF).
 //! We execute a configurable number of iterations of the `MinRoot` function per step of Nova's recursion.
 use bellpepper_core::{num::AllocatedNum, ConstraintSystem, SynthesisError};
-use ff::Field;
+use ff::{Field, PrimeField};
 use flate2::{write::ZlibEncoder, Compression};
 use nova_snark::{
-  provider::{Bn256EngineKZG, GrumpkinEngine},
+  provider::{PallasEngine, VestaEngine},
   traits::{
     circuit::{StepCircuit, TrivialCircuit},
     snark::RelaxedR1CSSNARKTrait,
@@ -16,9 +16,9 @@ use nova_snark::{
 use num_bigint::BigUint;
 use std::time::Instant;
 
-type E1 = Bn256EngineKZG;
-type E2 = GrumpkinEngine;
-type EE1 = nova_snark::provider::hyperkzg::EvaluationEngine<E1>;
+type E1 = PallasEngine;
+type E2 = VestaEngine;
+type EE1 = nova_snark::provider::ipa_pc::EvaluationEngine<E1>;
 type EE2 = nova_snark::provider::ipa_pc::EvaluationEngine<E2>;
 type S1 = nova_snark::spartan::snark::RelaxedR1CSSNARK<E1, EE1>; // non-preprocessing SNARK
 type S2 = nova_snark::spartan::snark::RelaxedR1CSSNARK<E2, EE2>; // non-preprocessing SNARK
