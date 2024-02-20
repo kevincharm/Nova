@@ -69,6 +69,12 @@ impl<G: Group> MinRootIteration<G> {
         y_i_plus_1,
       });
 
+      // TODO: remove
+      println!("x_{} = {:?}", _i, x_i);
+      println!("y_{} = {:?}", _i, y_i);
+      println!("x_{}_plus_1 = {:?}", _i, x_i_plus_1);
+      println!("y_{}_plus_1 = {:?}", _i, y_i_plus_1);
+
       x_i = x_i_plus_1;
       y_i = y_i_plus_1;
     }
@@ -154,8 +160,8 @@ fn main() {
   println!("Nova-based VDF with MinRoot delay function");
   println!("=========================================================");
 
-  let num_steps = 10;
-  for num_iters_per_step in [1024, 2048, 4096, 8192, 16384, 32768, 65536] {
+  let num_steps = 1; // Nova incremental proof steps (corresponds to number of circuits produced)
+  for num_iters_per_step in [5] {
     // number of iterations of MinRoot per Nova's recursive step
     let circuit_primary = MinRootCircuit {
       seq: vec![
