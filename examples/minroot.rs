@@ -59,7 +59,7 @@ impl<G: Group> MinRootIteration<G> {
         assert_eq!(fifth, x_i + y_i);
       }
 
-      let i_ = <G::Scalar as PrimeField>::from_u128(_i as u128);
+      let i_ = <G::Scalar as PrimeField>::from_u128((_i + 1) as u128);
       let y_i_plus_1 = x_i + i_;
 
       res.push(Self {
@@ -72,8 +72,8 @@ impl<G: Group> MinRootIteration<G> {
       // TODO: remove
       println!("x_{} = {:?}", _i, x_i);
       println!("y_{} = {:?}", _i, y_i);
-      println!("x_{}_plus_1 = {:?}", _i, x_i_plus_1);
-      println!("y_{}_plus_1 = {:?}", _i, y_i_plus_1);
+      // println!("x_{}_plus_1 = {:?}", _i, x_i_plus_1);
+      // println!("y_{}_plus_1 = {:?}", _i, y_i_plus_1);
 
       x_i = x_i_plus_1;
       y_i = y_i_plus_1;
@@ -113,7 +113,7 @@ impl<G: Group> StepCircuit<G::Scalar> for MinRootCircuit<G> {
     for i in 0..self.seq.len() {
       // non deterministic advice
       let i_ = AllocatedNum::alloc(cs.namespace(|| format!("i_iter_{i}")), || {
-        Ok(<G::Scalar as PrimeField>::from_u128(i as u128))
+        Ok(<G::Scalar as PrimeField>::from_u128((i + 1) as u128))
       })?;
       let x_i_plus_1 =
         AllocatedNum::alloc(cs.namespace(|| format!("x_i_plus_1_iter_{i}")), || {
