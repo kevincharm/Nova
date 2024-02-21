@@ -16,8 +16,8 @@ use nova_snark::{
 use num_bigint::BigUint;
 use std::time::Instant;
 
-type E1 = PallasEngine;
-type E2 = VestaEngine;
+type E1 = VestaEngine;
+type E2 = PallasEngine;
 type EE1 = nova_snark::provider::ipa_pc::EvaluationEngine<E1>;
 type EE2 = nova_snark::provider::ipa_pc::EvaluationEngine<E2>;
 type S1 = nova_snark::spartan::snark::RelaxedR1CSSNARK<E1, EE1>; // non-preprocessing SNARK
