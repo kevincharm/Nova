@@ -3,7 +3,7 @@
 //! We execute a configurable number of iterations of the `MinRoot` function per step of Nova's recursion.
 use bellpepper_core::{num::AllocatedNum, ConstraintSystem, SynthesisError};
 use ff::{Field, PrimeField};
-use flate2::{write::ZlibEncoder, Compression};
+use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use nova_snark::{
   provider::{PallasEngine, VestaEngine},
   traits::{
@@ -295,10 +295,21 @@ fn main() {
       compressed_snark_encoded.len()
     );
 
+    let encoded = compressed_snark_encoded.clone();
+    let mut decoder = ZlibDecoder::new(&encoded[..]);
+    let compressed_snark_decoded: CompressedSNARK<
+      VestaEngine,
+      PallasEngine,
+      MinRootCircuit<<E1 as Engine>::GE>,
+      TrivialCircuit<<E2 as Engine>::Scalar>,
+      S1,
+      S2,
+    > = bincode::deserialize_from(&mut decoder).unwrap();
+
     // verify the compressed SNARK
     println!("Verifying a CompressedSNARK...");
     let start = Instant::now();
-    let res = compressed_snark.verify(&vk, num_steps, &z0_primary, &z0_secondary);
+    let res = compressed_snark_decoded.verify(&vk, num_steps, &z0_primary, &z0_secondary);
     println!(
       "CompressedSNARK::verify: {:?}, took {:?}",
       res.is_ok(),
