@@ -2,10 +2,10 @@
 //! iterations of the `MinRoot` function, thereby realizing a Nova-based verifiable delay function (VDF).
 //! We execute a configurable number of iterations of the `MinRoot` function per step of Nova's recursion.
 use bellpepper_core::{num::AllocatedNum, ConstraintSystem, SynthesisError};
-use ff::Field;
-use flate2::{write::ZlibEncoder, Compression};
+use ff::{Field, PrimeField};
+use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use nova_snark::{
-  provider::{Bn256EngineKZG, GrumpkinEngine},
+  provider::{PallasEngine, VestaEngine},
   traits::{
     circuit::{StepCircuit, TrivialCircuit},
     snark::RelaxedR1CSSNARKTrait,
@@ -16,9 +16,9 @@ use nova_snark::{
 use num_bigint::BigUint;
 use std::time::Instant;
 
-type E1 = Bn256EngineKZG;
-type E2 = GrumpkinEngine;
-type EE1 = nova_snark::provider::hyperkzg::EvaluationEngine<E1>;
+type E1 = VestaEngine;
+type E2 = PallasEngine;
+type EE1 = nova_snark::provider::ipa_pc::EvaluationEngine<E1>;
 type EE2 = nova_snark::provider::ipa_pc::EvaluationEngine<E2>;
 type S1 = nova_snark::spartan::snark::RelaxedR1CSSNARK<E1, EE1>; // non-preprocessing SNARK
 type S2 = nova_snark::spartan::snark::RelaxedR1CSSNARK<E2, EE2>; // non-preprocessing SNARK
@@ -59,7 +59,8 @@ impl<G: Group> MinRootIteration<G> {
         assert_eq!(fifth, x_i + y_i);
       }
 
-      let y_i_plus_1 = x_i;
+      let i_ = <G::Scalar as PrimeField>::from_u128((_i + 1) as u128);
+      let y_i_plus_1 = x_i + i_;
 
       res.push(Self {
         x_i,
@@ -67,6 +68,12 @@ impl<G: Group> MinRootIteration<G> {
         x_i_plus_1,
         y_i_plus_1,
       });
+
+      // TODO: remove
+      println!("x_{} = {:?}", _i, x_i);
+      println!("y_{} = {:?}", _i, y_i);
+      // println!("x_{}_plus_1 = {:?}", _i, x_i_plus_1);
+      // println!("y_{}_plus_1 = {:?}", _i, y_i_plus_1);
 
       x_i = x_i_plus_1;
       y_i = y_i_plus_1;
@@ -105,16 +112,19 @@ impl<G: Group> StepCircuit<G::Scalar> for MinRootCircuit<G> {
     let mut y_i = y_0;
     for i in 0..self.seq.len() {
       // non deterministic advice
+      let i_ = AllocatedNum::alloc(cs.namespace(|| format!("i_iter_{i}")), || {
+        Ok(<G::Scalar as PrimeField>::from_u128((i + 1) as u128))
+      })?;
       let x_i_plus_1 =
         AllocatedNum::alloc(cs.namespace(|| format!("x_i_plus_1_iter_{i}")), || {
           Ok(self.seq[i].x_i_plus_1)
         })?;
+      let y_i_plus_1 = AllocatedNum::alloc(cs.namespace(|| format!("y_i_plus_1_iter{i}")), || {
+        Ok(self.seq[i].y_i_plus_1)
+      })?;
 
-      // check the following conditions hold:
+      // check that conditions (i) and (ii) hold:
       // (i) x_i_plus_1 = (x_i + y_i)^{1/5}, which can be more easily checked with x_i_plus_1^5 = x_i + y_i
-      // (ii) y_i_plus_1 = x_i
-      // (1) constraints for condition (i) are below
-      // (2) constraints for condition (ii) is avoided because we just used x_i wherever y_i_plus_1 is used
       let x_i_plus_1_sq = x_i_plus_1.square(cs.namespace(|| format!("x_i_plus_1_sq_iter_{i}")))?;
       let x_i_plus_1_quad =
         x_i_plus_1_sq.square(cs.namespace(|| format!("x_i_plus_1_quad_{i}")))?;
@@ -124,13 +134,20 @@ impl<G: Group> StepCircuit<G::Scalar> for MinRootCircuit<G> {
         |lc| lc + x_i_plus_1.get_variable(),
         |lc| lc + x_i.get_variable() + y_i.get_variable(),
       );
+      // (ii) y_i_plus_1 = x_i + i
+      cs.enforce(
+        || format!("1 * y_i_plus_1 = x_i + i"),
+        |lc| lc + CS::one(),
+        |lc| lc + y_i_plus_1.get_variable(),
+        |lc| lc + x_i.get_variable() + i_.get_variable(),
+      );
 
       if i == self.seq.len() - 1 {
         z_out = Ok(vec![x_i_plus_1.clone(), x_i.clone()]);
       }
 
       // update x_i and y_i for the next iteration
-      y_i = x_i;
+      y_i = y_i_plus_1;
       x_i = x_i_plus_1;
     }
 
@@ -143,8 +160,8 @@ fn main() {
   println!("Nova-based VDF with MinRoot delay function");
   println!("=========================================================");
 
-  let num_steps = 10;
-  for num_iters_per_step in [1024, 2048, 4096, 8192, 16384, 32768, 65536] {
+  let num_steps = 1; // Nova incremental proof steps (corresponds to number of circuits produced)
+  for num_iters_per_step in [5] {
     // number of iterations of MinRoot per Nova's recursive step
     let circuit_primary = MinRootCircuit {
       seq: vec![
@@ -278,10 +295,21 @@ fn main() {
       compressed_snark_encoded.len()
     );
 
+    let encoded = compressed_snark_encoded.clone();
+    let mut decoder = ZlibDecoder::new(&encoded[..]);
+    let compressed_snark_decoded: CompressedSNARK<
+      VestaEngine,
+      PallasEngine,
+      MinRootCircuit<<E1 as Engine>::GE>,
+      TrivialCircuit<<E2 as Engine>::Scalar>,
+      S1,
+      S2,
+    > = bincode::deserialize_from(&mut decoder).unwrap();
+
     // verify the compressed SNARK
     println!("Verifying a CompressedSNARK...");
     let start = Instant::now();
-    let res = compressed_snark.verify(&vk, num_steps, &z0_primary, &z0_secondary);
+    let res = compressed_snark_decoded.verify(&vk, num_steps, &z0_primary, &z0_secondary);
     println!(
       "CompressedSNARK::verify: {:?}, took {:?}",
       res.is_ok(),
